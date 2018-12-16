@@ -1,13 +1,14 @@
+#![feature(result_map_or_else)]
 extern crate toml;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate failure;
-
+use std::{thread, time};
 use tokio_core::reactor::Core;
 
+use std::fs;
 use std::io::{BufReader, Read};
-use std::{fs, mem};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -33,10 +34,25 @@ fn main() {
         consumer: egg_mode::KeyPair::new(config.ck, config.cs),
         access: egg_mode::KeyPair::new(config.tk, config.ts),
     };
-    search(&token).unwrap();
+
+    loop {
+        main_loop(&token);
+        thread::sleep(time::Duration::from_secs(10));
+    }
 }
 
-fn search(token: &egg_mode::Token) -> Result<(), failure::Error> {
+fn main_loop(token: &egg_mode::Token) {
+    search(&token).map_or_else(
+        |e| println!("{:?}", e),
+        |ts| {
+            for t in ts {
+                retweet(&token, &t).map_or_else(|e| println!("{:?}", e), |_| ());
+            }
+        },
+    );
+}
+
+fn search(token: &egg_mode::Token) -> Result<Vec<egg_mode::tweet::Tweet>, failure::Error> {
     let mut core = Core::new().unwrap();
     let handle = core.handle();
     let res = core.run(
@@ -45,9 +61,18 @@ fn search(token: &egg_mode::Token) -> Result<(), failure::Error> {
             .count(100)
             .call(&token, &handle),
     )?;
-    for x in res.statuses.clone().into_iter().filter(tweet_filter) {
-        println!("{}", x.text);
-    }
+    Ok(res
+        .statuses
+        .clone()
+        .into_iter()
+        .filter(tweet_filter)
+        .collect())
+}
+
+fn retweet(token: &egg_mode::Token, t: &egg_mode::tweet::Tweet) -> Result<(), failure::Error> {
+    let mut core = Core::new().unwrap();
+    let handle = core.handle();
+    core.run(egg_mode::tweet::retweet(t.id, &token, &handle))?;
     Ok(())
 }
 
