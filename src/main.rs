@@ -4,11 +4,11 @@ extern crate toml;
 extern crate serde_derive;
 #[macro_use]
 extern crate failure;
-use std::{thread, time};
-use tokio_core::reactor::Core;
-
+use std::collections::HashSet;
 use std::fs;
 use std::io::{BufReader, Read};
+use std::{thread, time};
+use tokio_core::reactor::Core;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -34,52 +34,66 @@ fn main() {
         consumer: egg_mode::KeyPair::new(config.ck, config.cs),
         access: egg_mode::KeyPair::new(config.tk, config.ts),
     };
+    MainLoop::new(token).run();
+}
 
-    loop {
-        main_loop(&token);
-        thread::sleep(time::Duration::from_secs(10));
+struct MainLoop {
+    token: egg_mode::Token,
+    rted: HashSet<u64>,
+    core: Core,
+}
+
+impl MainLoop {
+    fn new(token: egg_mode::Token) -> MainLoop {
+        MainLoop {
+            token,
+            rted: HashSet::new(),
+            core: Core::new().unwrap(),
+        }
     }
-}
 
-fn main_loop(token: &egg_mode::Token) {
-    search(&token).map_or_else(
-        |e| println!("{:?}", e),
-        |ts| {
-            for t in ts {
-                retweet(&token, &t).map_or_else(|e| println!("{:?}", e), |_| ());
-            }
-        },
-    );
-}
+    fn run(mut self) {
+        loop {
+            self.search().map_or_else(
+                |e| println!("{:?}", e),
+                |ts| {
+                    for t in ts {
+                        self.retweet(&t)
+                            .map_or_else(|e| println!("{:?}", e), |_| ());
+                    }
+                },
+            );
+        }
+    }
 
-fn search(token: &egg_mode::Token) -> Result<Vec<egg_mode::tweet::Tweet>, failure::Error> {
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-    let res = core.run(
-        egg_mode::search::search("デート 今日 彼 OR 彼女 OR 彼氏 OR 恋人")
-            .result_type(egg_mode::search::ResultType::Recent)
-            .count(100)
-            .call(&token, &handle),
-    )?;
-    Ok(res
-        .statuses
-        .clone()
-        .into_iter()
-        .filter(tweet_filter)
-        .collect())
-}
+    fn search(&mut self) -> Result<Vec<egg_mode::tweet::Tweet>, failure::Error> {
+        let handle = self.core.handle();
+        let res = self.core.run(
+            egg_mode::search::search("デート 今日 彼 OR 彼女 OR 彼氏 OR 恋人")
+                .result_type(egg_mode::search::ResultType::Recent)
+                .count(100)
+                .call(&self.token, &handle),
+        )?;
+        Ok(res
+            .statuses
+            .clone()
+            .into_iter()
+            .filter(MainLoop::tweet_filter)
+            .collect())
+    }
 
-fn retweet(token: &egg_mode::Token, t: &egg_mode::tweet::Tweet) -> Result<(), failure::Error> {
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-    core.run(egg_mode::tweet::retweet(t.id, &token, &handle))?;
-    Ok(())
-}
+    fn retweet(&mut self, t: &egg_mode::tweet::Tweet) -> Result<(), failure::Error> {
+        let handle = self.core.handle();
+        self.core
+            .run(egg_mode::tweet::retweet(t.id, &self.token, &handle))?;
+        Ok(())
+    }
 
-fn tweet_filter(t: &egg_mode::tweet::Tweet) -> bool {
-    t.source.name == "Twitter for iPhone"
+    fn tweet_filter(t: &egg_mode::tweet::Tweet) -> bool {
+        t.source.name == "Twitter for iPhone"
         && t.current_user_retweet.is_none()
         // && !t.text.contains("http")
         && !t.text.contains("#")
         && !t.text.contains("RT")
+    }
 }
