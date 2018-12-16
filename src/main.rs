@@ -40,7 +40,7 @@ fn search(token: &egg_mode::Token) -> Result<(), failure::Error> {
     let mut core = Core::new().unwrap();
     let handle = core.handle();
     let res = core.run(
-        egg_mode::search::search("デート 今日 彼 OR 彼女 OR 彼氏")
+        egg_mode::search::search("デート 今日 彼 OR 彼女 OR 彼氏 OR 恋人")
             .result_type(egg_mode::search::ResultType::Recent)
             .count(100)
             .call(&token, &handle),
@@ -54,7 +54,7 @@ fn search(token: &egg_mode::Token) -> Result<(), failure::Error> {
 fn tweet_filter(t: &egg_mode::tweet::Tweet) -> bool {
     t.source.name == "Twitter for iPhone"
         && t.current_user_retweet.is_none()
-        && !t.text.contains("http")
+        // && !t.text.contains("http")
         && !t.text.contains("#")
         && !t.text.contains("RT")
 }
