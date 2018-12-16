@@ -83,9 +83,12 @@ impl MainLoop {
     }
 
     fn retweet(&mut self, t: &egg_mode::tweet::Tweet) -> Result<(), failure::Error> {
-        let handle = self.core.handle();
-        self.core
-            .run(egg_mode::tweet::retweet(t.id, &self.token, &handle))?;
+        if !self.rted.contains(&t.id) {
+            self.rted.insert(t.id);
+            let handle = self.core.handle();
+            self.core
+                .run(egg_mode::tweet::retweet(t.id, &self.token, &handle))?;
+        }
         Ok(())
     }
 
