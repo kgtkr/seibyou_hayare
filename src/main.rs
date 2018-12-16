@@ -63,6 +63,8 @@ impl MainLoop {
                     }
                 },
             );
+
+            thread::sleep(time::Duration::from_secs(10));
         }
     }
 
